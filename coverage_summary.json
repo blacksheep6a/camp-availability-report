@@ -1,0 +1,27 @@
+{
+  "generated_at": "2026-06-11T16:31:19.121552",
+  "campgrounds": 326,
+  "provider_counts": {
+    "Colorado Parks and Wildlife": 33,
+    "KOA": 16,
+    "Larimer County Natural Resources": 6,
+    "CampLife": 2,
+    "Campspot": 2,
+    "Colorado state parks": 1,
+    "Hipcamp": 2,
+    "ReserveAmerica": 3,
+    "RoverPass": 26,
+    "Recreation.gov": 235
+  },
+  "availability_rows": 13207,
+  "tier_counts": {
+    "deep_link": 41,
+    "directory": 11,
+    "live": 274
+  },
+  "amenities_captured_live": {
+    "cpwshop": 33,
+    "larimercamping": 6,
+    "recreation_gov": 173
+  }
+}
