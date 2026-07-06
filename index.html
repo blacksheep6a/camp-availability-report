@@ -78,7 +78,7 @@
       font-weight: 650;
     }
 
-    .notice, .legend, .filters, .status {
+    .notice, .staleness-banner, .legend, .filters, .status {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -92,6 +92,17 @@
     }
 
     .notice strong { color: var(--text); }
+
+    .staleness-banner {
+      padding: 14px 16px;
+      margin-bottom: 14px;
+      border-color: #e2a83a;
+      background: var(--amber-bg);
+      color: #5f3b00;
+      font-weight: 700;
+    }
+
+    .staleness-banner[hidden] { display: none; }
 
     .legend {
       padding: 12px 14px;
@@ -395,12 +406,14 @@
       <strong>Coverage disclosure:</strong> Live availability is tracked only for sources where this report collects per-night availability snapshots: Recreation.gov, CPWShop/Colorado Parks, and Larimer Camping. Private/commercial campgrounds are listed in separate Deep link or Directory tiers for discovery and completeness, but we do not track their live availability. For those rows, check dates, prices, rules, and site availability directly with the operator. A private row with no live data means "not tracked here," not sold out.
     </section>
 
+    <section class="staleness-banner" id="staleness-banner" aria-live="polite" hidden></section>
+
     <section class="filters" aria-label="Campground filters">
       <fieldset>
         <legend>Availability</legend>
         <label class="check">
           <input type="checkbox" id="availableOnly">
-          <span id="availableLabel">Available this weekend</span>
+          <span id="availableLabel">Available for listed weekend</span>
         </label>
       </fieldset>
 
@@ -480,6 +493,7 @@
         amenityFilters: document.getElementById("amenityFilters"),
         availableOnly: document.getElementById("availableOnly"),
         availableLabel: document.getElementById("availableLabel"),
+        stalenessBanner: document.getElementById("staleness-banner"),
         showLive: document.getElementById("showLive"),
         showPrivate: document.getElementById("showPrivate"),
         maxRvLength: document.getElementById("maxRvLength"),
@@ -514,6 +528,60 @@
         var date = new Date(value);
         if (isNaN(date.getTime())) return value;
         return date.toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+      }
+
+      function formatSnapshotDate(value) {
+        if (!value) return "";
+        var date = new Date(value);
+        if (isNaN(date.getTime())) return value;
+        return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+      }
+
+      function parseLocalDate(value) {
+        if (!value) return null;
+        var parts = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!parts) return null;
+        return new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
+      }
+
+      function isWeekendPast() {
+        var sat = state.weekend ? parseLocalDate(state.weekend.sat) : null;
+        if (!sat || isNaN(sat.getTime())) return false;
+        var endOfSaturday = new Date(sat.getFullYear(), sat.getMonth(), sat.getDate() + 1);
+        return endOfSaturday.getTime() < Date.now();
+      }
+
+      function weekendDatesLabel() {
+        if (state.weekend && state.weekend.label) return state.weekend.label;
+        var fri = state.weekend ? parseLocalDate(state.weekend.fri) : null;
+        var sat = state.weekend ? parseLocalDate(state.weekend.sat) : null;
+        if (!fri || !sat || isNaN(fri.getTime()) || isNaN(sat.getTime())) return "listed dates";
+        var sameMonth = fri.getFullYear() === sat.getFullYear() && fri.getMonth() === sat.getMonth();
+        if (sameMonth) {
+          return fri.toLocaleDateString(undefined, { month: "short" }) + " " + fri.getDate() + "-" + sat.getDate() + ", " + sat.getFullYear();
+        }
+        return fri.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + "-" + sat.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+      }
+
+      function weekendPhrase() {
+        var dates = weekendDatesLabel();
+        return isWeekendPast() ? "the weekend of " + dates : "this weekend";
+      }
+
+      function availabilityFilterLabel() {
+        var dates = weekendDatesLabel();
+        return isWeekendPast() ? "Available weekend of " + dates : "Available this weekend (" + dates + ")";
+      }
+
+      function renderStalenessBanner() {
+        var generated = state.generatedAt ? new Date(state.generatedAt) : null;
+        if (!generated || isNaN(generated.getTime())) return;
+        var ageMs = Date.now() - generated.getTime();
+        var staleAfterMs = 48 * 60 * 60 * 1000;
+        if (ageMs <= staleAfterMs) return;
+        var daysOld = Math.max(2, Math.round(ageMs / (24 * 60 * 60 * 1000)));
+        els.stalenessBanner.textContent = "Data snapshot from " + formatSnapshotDate(state.generatedAt) + " - " + daysOld + " days old. Availability shown below is historical, not current.";
+        els.stalenessBanner.hidden = false;
       }
 
       function hasLiveWeekendAvailability(row) {
@@ -571,7 +639,7 @@
         var sat = Number(wk.sat) || 0;
         var total = Number(wk.total_sites) || 0;
         if (fri === 0 && sat === 0) {
-          return '<div class="availability empty">0 open this weekend</div>';
+          return '<div class="availability empty">0 open ' + escapeHtml(weekendPhrase()) + '</div>';
         }
         var parts = [];
         if (fri > 0) parts.push("Fri: " + fri + (total ? " of " + total + " sites open" : " sites open"));
@@ -663,7 +731,7 @@
         var directoriesAll = state.rows.filter(function (row) { return row.tier === "directory"; }).length;
 
         els.resultCount.textContent = "Showing " + filtered.length + " of " + total + " campgrounds";
-        els.tierCounts.textContent = live + " live shown · " + privateRows + " book-direct shown · " + liveAvailableAll + " live-tracked campgrounds have at least one live available site this weekend. " + deepLinksAll + " deep-link listings and " + directoriesAll + " directory listings are shown separately without live availability.";
+        els.tierCounts.textContent = live + " live shown · " + privateRows + " book-direct shown · " + liveAvailableAll + " live-tracked campgrounds have at least one live available site " + weekendPhrase() + ". " + deepLinksAll + " deep-link listings and " + directoriesAll + " directory listings are shown separately without live availability.";
         els.results.innerHTML = filtered.length ? filtered.map(renderCard).join("") : '<div class="empty">No campgrounds match these filters.</div>';
       }
 
@@ -713,10 +781,9 @@
         state.rows = Array.isArray(data.campgrounds) ? data.campgrounds : [];
         state.weekend = data.weekend || {};
         state.generatedAt = data.generated_at || "";
-        if (state.weekend.label) {
-          els.availableLabel.textContent = "Available this weekend (" + state.weekend.label + ")";
-        }
+        els.availableLabel.textContent = availabilityFilterLabel();
         els.snapshotDate.textContent = state.generatedAt ? "Snapshot: " + formatDate(state.generatedAt) : "";
+        renderStalenessBanner();
         render();
       }
 
